@@ -240,11 +240,11 @@ if __name__ == "__main__":
 
     # get landsat 8 folder list by year, path and row
     # LE07 LC08
-    l8list = get_landsat_by_pathrow(2018, 124, 35, "LC08")
+    l8list = get_landsat_by_pathrow(2016, 123, 34, "LC08")
     pprint.pprint(l8list)
 
     # get images stacked
-    out_path = home_dir + "/data_pool/china_crop/NCP_winter_wheat_test/L8-124-35/"
+    out_path = home_dir + "/data_pool/china_crop/NCP_winter_wheat_test/L8/"
     stack_landsat_decloud(l8list, out_path, "LC08")
 
     print("fin")

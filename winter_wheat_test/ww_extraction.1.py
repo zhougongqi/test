@@ -40,6 +40,7 @@ def calc_ndvi(l8list: str, outdir: str):
         outdir: dir of output ndvi imgs
     """
     nfiles = len(l8list)
+    outlist = []
 
     for n in range(nfiles):
         fname = os.path.basename(l8list[n])
@@ -74,8 +75,34 @@ def calc_ndvi(l8list: str, outdir: str):
         out_ds.SetGeoTransform(geo_trans)
         out_ds.FlushCache()
         out_ds = None
+        outlist.append(outpath)
 
-    return True
+    # calc red-ndvi of t3
+    # read img
+    ds = gdal.Open(l8list[-1])
+    nbands = ds.RasterCount
+    geo_trans = ds.GetGeoTransform()
+    w = ds.RasterXSize
+    h = ds.RasterYSize
+    img_shape = [h, w]
+    proj = ds.GetProjection()
+    green = ds.GetRasterBand(3).ReadAsArray()
+    red = ds.GetRasterBand(4).ReadAsArray()
+
+    r_g = red * 1.0 - green
+
+    # build output path
+    outpath = outdir + "red-green.tif"
+    # write output into tiff file
+    out_ds = gdal.GetDriverByName("GTiff").Create(outpath, w, h, 1, gdal.GDT_Float32)
+    out_ds.GetRasterBand(1).WriteArray(r_g)
+    out_ds.SetProjection(proj)
+    out_ds.SetGeoTransform(geo_trans)
+    out_ds.FlushCache()
+    out_ds = None
+    outlist.append(outpath)
+
+    return outlist
 
 
 def calc_ndvi_and_ww(ndvi_list: str, outdir: str):
@@ -83,6 +110,12 @@ def calc_ndvi_and_ww(ndvi_list: str, outdir: str):
     input:
         ndvi_list:  a list contains l8 imgs to be calculated
         outdir: dir of output ndvi imgs
+
+        ndvi_list is like:
+            ndvi of t1
+            ndvi of t2
+            ndvi of t3
+            red-green of t3
     """
     nfiles = len(ndvi_list)
 
@@ -98,6 +131,8 @@ def calc_ndvi_and_ww(ndvi_list: str, outdir: str):
         + ndvi_list[1]
         + " "
         + ndvi_list[2]
+        + " "
+        + ndvi_list[3]
     )
     print("cmd string is :", cmd_str)
     process_status = subprocess.run(cmd_str, shell=True)
@@ -113,6 +148,7 @@ def calc_ndvi_and_ww(ndvi_list: str, outdir: str):
     n1 = ds.GetRasterBand(1).ReadAsArray()
     n2 = ds.GetRasterBand(2).ReadAsArray()
     n3 = ds.GetRasterBand(3).ReadAsArray()
+    r_g = ds.GetRasterBand(4).ReadAsArray()
 
     ww = n1.copy().astype(np.int8)
     ww[:, :] = 0
@@ -125,19 +161,16 @@ def calc_ndvi_and_ww(ndvi_list: str, outdir: str):
     idx = np.where(n0 > 0)
     ww[idx] += 1
 
-    # idx = np.where(n3 > 0)
-    # ww[idx] += 1
-
-    # ww[ww < 1] = 0  # (nfiles - 1) keep the largest pixels
-
-    idx = np.where(n3 <= 0.22)
+    idx = np.where(n3 <= 0.22)  # delete small ndvi pixels at t3
+    ww[idx] = 0
+    idx = np.where(r_g < 0)  # delete red > green pixels
     ww[idx] = 0
 
     ww[ww < 2] = 0
     ww[ww == 2] = 1
 
     wwb = ww.astype(np.bool)
-    wwb = remove_small_objects(wwb, 18)
+    wwb = remove_small_objects(wwb, 8)
     ww = wwb.astype(np.int8)
 
     # write ndvi file
@@ -286,6 +319,7 @@ def remove_small_blocks(ww):
 if __name__ == "__main__":
     # winter wheat extraction
     # using Oct, Nov, Dec imgs, 2-3 time spot is needed
+    # add red-green as a criterion
 
     l8_path = home_dir + "/data_pool/china_crop/NCP_winter_wheat_test/L8-124-35/"
     # "/data_pool/china_crop/NCP_winter_wheat_test/L8-122-37/"
@@ -306,14 +340,14 @@ if __name__ == "__main__":
     #     "/home/tq/data_pool/china_crop/NCP_winter_wheat_test/L8-122-37/LC08_L1TP_122037_20171210_20171223_01_T1_stacked_decloud.tif",
     # ]
 
-    out_path = home_dir + "/data_pool/china_crop/NCP_winter_wheat_test/L8-out/test2.1/"
+    out_path = home_dir + "/data_pool/china_crop/NCP_winter_wheat_test/L8-out/test2.2/"
     vali_county = (
         "/home/tq/data_pool/china_crop/NCP_winter_wheat_test/shape/hebei-some-xians.shp"
     )
 
-    stat = calc_ndvi(l8_list, out_path)
-    ndvi_list = glob.glob(out_path + "*ndvi.tif")
-    ndvi_list.sort()
+    ndvi_list = calc_ndvi(l8_list, out_path)
+    # ndvi_list = glob.glob(out_path + "*ndvi.tif")
+    # ndvi_list.sort()
     stat = calc_ndvi_and_ww(ndvi_list, out_path)
 
     # # count pixels ##useless in hebei
